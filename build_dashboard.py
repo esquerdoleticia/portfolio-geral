@@ -66,20 +66,6 @@ STAGES = [
 EXECUCAO_KEYS = ["planejamento", "refinamento", "desenvolvimento", "homologacao", "treinamento"]
 PARADA_KEYS = ["bloqueada", "pausada"]
 
-# Mapeia o "Status" da aba Iniciativas para a etapa correspondente do card.
-STATUS_TO_STAGE = {
-    "não iniciada": "nao_iniciada",
-    "planejamento": "planejamento",
-    "refinamento": "refinamento",
-    "desenvolvimento": "desenvolvimento",
-    "em andamento": "desenvolvimento",
-    "homologação": "homologacao",
-    "treinamento": "treinamento",
-    "bloqueada": "bloqueada",
-    "pausada": "pausada",
-    "concluída": "concluida",
-}
-
 # Fases do épico no roadmap (Gantt). Barra dividida por semanas de cada fase.
 PHASE_COLORS = {
     "discovery":   ("#E7D8A6", "#7C6A34", "discovery"),
@@ -101,7 +87,6 @@ MONTHS = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", 
 MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
 SITUACAO_ATIVAS = {"Ativo", "Concluído"}  # escopo aprovado: só portfólio ativo
-EPICOS_OCULTOS_ROADMAP = {"GMUD"}          # épicos que não aparecem no roadmap
 
 
 # ---------------------------------------------------------------------------
@@ -249,21 +234,7 @@ def extract_financeiro(ws):
     }
 
 
-def hidden_epicos(ws_iniciativas):
-    """(produto, status) dos épicos ocultos ativos — pra descontar dos KPIs/cards."""
-    header = find_row_with(ws_iniciativas, 1, "Situação")
-    rows = read_table(ws_iniciativas, header, key_col=3)
-    out = []
-    for r in rows:
-        if str(r.get("Situação") or "").strip() not in SITUACAO_ATIVAS:
-            continue
-        if str(r.get("Épico") or "").strip().upper() in EPICOS_OCULTOS_ROADMAP:
-            out.append((str(r.get("Produto") or "").strip(),
-                        str(r.get("Status") or "").strip()))
-    return out
-
-
-def extract_portfolio(ws, ocultos=()):
+def extract_portfolio(ws):
     header = find_row_with(ws, 1, "Produto")
     rows = read_table(ws, header, key_col=1)
     produtos = []
@@ -287,19 +258,7 @@ def extract_portfolio(ws, ocultos=()):
             "proxima": str(r.get("Próxima iniciativa") or "").strip(),
             "bloqueio_ativo": str(r.get("Bloqueio ativo?") or "").strip() == "Sim",
         })
-
-    # Desconta os épicos ocultos (ex: GMUD) da contagem do respectivo produto.
-    by_name = {p["produto"]: p for p in produtos}
-    for produto, status in ocultos:
-        p = by_name.get(produto)
-        if not p:
-            continue
-        if p["total"] > 0:
-            p["total"] -= 1
-        stage = STATUS_TO_STAGE.get(status.lower())
-        if stage and p["counts"].get(stage, 0) > 0:
-            p["counts"][stage] -= 1
-    return [p for p in produtos if p["total"] > 0]
+    return produtos
 
 
 def kpis_from_portfolio(produtos):
@@ -322,8 +281,6 @@ def extract_roadmap(ws):
     itens = []
     for r in rows:
         if str(r.get("Situação") or "").strip() not in SITUACAO_ATIVAS:
-            continue
-        if str(r.get("Épico") or "").strip().upper() in EPICOS_OCULTOS_ROADMAP:
             continue
         inicio = to_date(r.get("Início"))
         if inicio is None:
@@ -946,8 +903,7 @@ def read_password():
 def build():
     wb = load_workbook(PORTFOLIO_FILE, read_only=True, data_only=True)
     fin = extract_financeiro(wb["Contrato"])
-    ocultos = hidden_epicos(wb["Iniciativas"])
-    produtos = extract_portfolio(wb["Portfólio"], ocultos)
+    produtos = extract_portfolio(wb["Portfólio"])
     kpis = kpis_from_portfolio(produtos)
     roadmap = extract_roadmap(wb["Iniciativas"])
     bloqueios = extract_bloqueios(wb["Bloqueios"])
