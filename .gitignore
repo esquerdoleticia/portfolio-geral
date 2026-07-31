@@ -1,0 +1,8 @@
+*.xlsx
+~$*.xlsx
+.claude/
+__pycache__/
+.DS_Store
+
+# Senha do dashboard (NUNCA versionar)
+senha_dashboard.txt
