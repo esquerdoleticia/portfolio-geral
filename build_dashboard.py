@@ -87,6 +87,7 @@ MONTHS = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", 
 MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
 SITUACAO_ATIVAS = {"Ativo", "Concluído"}  # escopo aprovado: só portfólio ativo
+EPICOS_OCULTOS_ROADMAP = {"GMUD"}          # épicos que não aparecem no roadmap
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +282,8 @@ def extract_roadmap(ws):
     itens = []
     for r in rows:
         if str(r.get("Situação") or "").strip() not in SITUACAO_ATIVAS:
+            continue
+        if str(r.get("Épico") or "").strip().upper() in EPICOS_OCULTOS_ROADMAP:
             continue
         inicio = to_date(r.get("Início"))
         if inicio is None:
