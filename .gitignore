@@ -6,3 +6,9 @@ __pycache__/
 
 # Senha do dashboard (NUNCA versionar)
 senha_dashboard.txt
+
+# Imagens/logos (embutidas na página via data URI)
+*.png
+*.jpg
+*.jpeg
+*.svg

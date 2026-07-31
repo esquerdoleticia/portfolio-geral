@@ -20,7 +20,32 @@ BASE_DIR = Path(__file__).resolve().parent
 PORTFOLIO_FILE = BASE_DIR / "Planilha_Portfolio_Produtos_v1.xlsx"
 OUTPUT_FILE = BASE_DIR / "index.html"
 PASSWORD_FILE = BASE_DIR / "senha_dashboard.txt"  # fora do Git (.gitignore)
+LOGO_FILE = BASE_DIR / "fenix_icone.svg"          # só a fênix (transparente)
 PBKDF2_ITER = 220000
+
+
+def logo_data_uri():
+    """Fênix como data URI (embutida na página — self-contained)."""
+    svg = LOGO_FILE.read_bytes()
+    return "data:image/svg+xml;base64," + base64.b64encode(svg).decode("ascii")
+
+
+# Troca de abas (passado como argumento — chaves não são interpretadas pelo .format)
+TAB_SCRIPT = """
+(function(){
+  var tabs = document.querySelectorAll('.tab');
+  var panels = document.querySelectorAll('.panel');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener('click', function(){
+      for (var j = 0; j < tabs.length; j++) { tabs[j].classList.remove('active'); }
+      for (var k = 0; k < panels.length; k++) { panels[k].classList.add('hidden'); }
+      this.classList.add('active');
+      document.getElementById('panel-' + this.getAttribute('data-tab')).classList.remove('hidden');
+      window.scrollTo(0, 0);
+    });
+  }
+})();
+"""
 
 NAVY = "#0D2137"
 ORANGE = "#F97316"
@@ -450,7 +475,7 @@ def render_bloqueios(bloqueios):
           <div class="hist-meta">
             <span>🔓 {escape(str(b.get("Quem destrava") or "—"))}</span>
             <span>⏱ {int(num(b.get("Dias parado")))} dias parado</span>
-            <span>{desde_txt} → <strong>resolvido {resolvido_txt}</strong></span>
+            <span>{desde_txt} → <span class="resolvido-tag">Resolvido {resolvido_txt}</span></span>
           </div>
         </div>"""
     return html
@@ -566,9 +591,29 @@ PAGE_TEMPLATE = """<!doctype html>
     max-width: 1240px; margin: 0 auto; padding: 36px 24px 20px;
     border-bottom: 1px solid var(--border);
   }}
-  header.top .brand {{ font-size: 0.85rem; font-weight: 700; color: var(--navy); margin-bottom: 10px; }}
+  header.top .brandrow {{ display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }}
+  header.top .logo {{ height: 40px; width: auto; display: block; }}
+  header.top .brandtext {{ font-size: 0.9rem; font-weight: 700; color: var(--navy); }}
   header.top h1 {{ margin: 0; font-size: 2.1rem; font-weight: 800; color: var(--navy); letter-spacing: -0.01em; }}
   header.top .subtitle {{ margin: 10px 0 0; color: var(--muted); font-size: 0.95rem; }}
+
+  /* Menu de abas */
+  .tabs {{ max-width: 1240px; margin: 0 auto; padding: 18px 24px 0; display: flex; gap: 8px; flex-wrap: wrap; }}
+  .tab {{ padding: 10px 18px; border: 1px solid var(--border); border-radius: 999px; background: #fff;
+    color: var(--muted); font-size: 0.9rem; font-weight: 600; cursor: pointer; font-family: inherit; }}
+  .tab:hover {{ border-color: #CBD5E1; color: var(--navy); }}
+  .tab.active {{ background: var(--navy); color: #fff; border-color: var(--navy); }}
+  .panel.hidden {{ display: none; }}
+
+  /* Produtos internos — em construção */
+  .construcao {{ text-align: center; padding: 64px 24px; }}
+  .construcao .logo-big {{ height: 84px; opacity: 0.92; margin-bottom: 22px; }}
+  .construcao h2 {{ font-size: 1.5rem; color: var(--navy); text-transform: none; letter-spacing: normal; margin: 0 0 10px; }}
+  .construcao p {{ color: var(--muted); font-size: 1rem; margin: 6px 0; }}
+  .construcao p.sub {{ max-width: 470px; margin: 10px auto 0; font-size: 0.9rem; }}
+  .construcao .selo {{ display: inline-block; margin-top: 8px; background: #FEF3E7; color: var(--orange);
+    font-size: 0.8rem; font-weight: 700; padding: 6px 14px; border-radius: 999px; }}
+
   main {{ max-width: 1240px; margin: 0 auto; padding: 28px 24px 80px; }}
   section {{ margin-bottom: 44px; }}
   section h2 {{
@@ -659,7 +704,9 @@ PAGE_TEMPLATE = """<!doctype html>
   .hist-main strong {{ color: var(--navy); }}
   .hist-badge {{ font-size: 0.72rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; }}
   .hist-desc {{ margin: 7px 0; color: var(--text); font-size: 0.86rem; }}
-  .hist-meta {{ display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.78rem; color: var(--muted); }}
+  .hist-meta {{ display: flex; gap: 18px; flex-wrap: wrap; align-items: center; font-size: 0.78rem; color: var(--muted); }}
+  .resolvido-tag {{ background: #DCFCE7; color: #16A34A; font-size: 0.72rem; font-weight: 600;
+    padding: 3px 10px; border-radius: 999px; }}
   .empty-state {{ color: var(--muted); font-style: italic; }}
 
   /* Financeiro */
@@ -684,7 +731,9 @@ PAGE_TEMPLATE = """<!doctype html>
   .sit-badge {{ font-size: 0.72rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; }}
   .fin-janelas td:last-child {{ font-weight: 600; color: var(--navy); }}
 
-  footer {{ text-align: center; color: var(--muted); font-size: 0.75rem; padding: 20px; }}
+  footer {{ text-align: center; color: var(--muted); font-size: 0.75rem; padding: 24px;
+    display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }}
+  footer .foot-logo {{ height: 20px; opacity: 0.7; }}
 
   @media (max-width: 1080px) {{
     .kpi-row {{ grid-template-columns: repeat(3, 1fr); }}
@@ -700,37 +749,62 @@ PAGE_TEMPLATE = """<!doctype html>
 </head>
 <body>
 <header class="top">
-  <div class="brand">Fênix Educação</div>
-  <h1>Portfólio Digital — Produtos Digitais 2026</h1>
-  <p class="subtitle">Atualização: {updated_at} · {num_produtos} produtos · {num_iniciativas} iniciativas ativas</p>
+  <div class="brandrow">
+    <img class="logo" src="{logo}" alt="Grupo Fênix Educação">
+    <span class="brandtext">Grupo Fênix Educação</span>
+  </div>
+  <h1>Produtos Digitais - 2026</h1>
+  <p class="subtitle">Atualização: {updated_at} · {num_produtos} produtos · {num_iniciativas} iniciativas estimadas</p>
 </header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="roadmap">Roadmap geral</button>
+  <button class="tab" data-tab="pf">Contrato SESI</button>
+  <button class="tab" data-tab="internos">Produtos internos</button>
+</nav>
+
 <main>
-  <section>
-    <h2>Visão geral — Portfólio</h2>
-    <div class="kpi-row">{kpis_html}</div>
-  </section>
+  <div class="panel" id="panel-roadmap">
+    <section>
+      <h2>Visão geral — Portfólio</h2>
+      <div class="kpi-row">{kpis_html}</div>
+    </section>
+    <section>
+      <h2>Visão por produto</h2>
+      <div class="cards-grid">{cards_html}</div>
+    </section>
+    <section>
+      <h2>Roadmap — Iniciativas 2026</h2>
+      {roadmap_html}
+    </section>
+    <section>
+      <h2>Histórico de bloqueios</h2>
+      {bloqueios_html}
+    </section>
+  </div>
 
-  <section>
-    <h2>Visão por produto</h2>
-    <div class="cards-grid">{cards_html}</div>
-  </section>
+  <div class="panel hidden" id="panel-pf">
+    <section>
+      <h2>Pontos de Função</h2>
+      {financeiro_html}
+    </section>
+  </div>
 
-  <section>
-    <h2>Roadmap — Iniciativas 2026</h2>
-    {roadmap_html}
-  </section>
-
-  <section>
-    <h2>Histórico de bloqueios resolvidos</h2>
-    {bloqueios_html}
-  </section>
-
-  <section>
-    <h2>Saúde financeira do contrato</h2>
-    {financeiro_html}
-  </section>
+  <div class="panel hidden" id="panel-internos">
+    <div class="construcao">
+      <img class="logo-big" src="{logo}" alt="">
+      <h2>Produtos internos</h2>
+      <span class="selo">🚧 Em construção</span>
+      <p class="sub">Em breve, o acompanhamento dos produtos internos da Fênix (LeituraTech, Timeline, FNXCore e mais) — com roadmap, status e métricas próprias.</p>
+    </div>
+  </div>
 </main>
-<footer>Gerado automaticamente a partir da planilha de gestão do portfólio.</footer>
+
+<footer>
+  <img class="foot-logo" src="{logo}" alt="">
+  <span>Grupo Fênix Educação · gerado automaticamente a partir da planilha de gestão do portfólio.</span>
+</footer>
+<script>{tab_script}</script>
 </body>
 </html>
 """
@@ -761,11 +835,13 @@ GATE_TEMPLATE = """<!doctype html>
     background: #F97316; color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; }
   button:hover { background: #EA6A0C; }
   .err { color: #FCA5A5; font-size: 0.85rem; min-height: 20px; margin-top: 12px; }
+  .gate-logo { height: 72px; margin-bottom: 10px; }
 </style>
 </head>
 <body>
 <div class="gate">
-  <div class="brand">Fênix Educação</div>
+  <img class="gate-logo" src="__LOGO__" alt="Grupo Fênix">
+  <div class="brand">Grupo Fênix Educação</div>
   <h1>Portfólio Digital</h1>
   <p class="sub">Painel protegido. Digite a senha de acesso.</p>
   <form id="f">
@@ -800,7 +876,7 @@ GATE_TEMPLATE = """<!doctype html>
 """
 
 
-def encrypt_page(inner_html, password):
+def encrypt_page(inner_html, password, logo):
     """Empacota o dashboard numa página com senha (AES-256-GCM + PBKDF2)."""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -810,6 +886,7 @@ def encrypt_page(inner_html, password):
     ct = AESGCM(key).encrypt(iv, inner_html.encode("utf-8"), None)  # ct||tag
     b = lambda raw: base64.b64encode(raw).decode("ascii")
     return (GATE_TEMPLATE
+            .replace("__LOGO__", logo)
             .replace("__SALT__", b(salt))
             .replace("__IV__", b(iv))
             .replace("__CT__", b(ct))
@@ -832,8 +909,11 @@ def build():
     bloqueios = extract_bloqueios(wb["Bloqueios"])
     wb.close()
 
+    logo = logo_data_uri()
     html = PAGE_TEMPLATE.format(
         navy=NAVY, orange=ORANGE,
+        logo=logo,
+        tab_script=TAB_SCRIPT,
         updated_at=datetime.now().strftime("%d/%m/%Y"),
         num_produtos=len(produtos),
         num_iniciativas=len(roadmap),
@@ -846,7 +926,7 @@ def build():
 
     password = read_password()
     if password:
-        OUTPUT_FILE.write_text(encrypt_page(html, password), encoding="utf-8")
+        OUTPUT_FILE.write_text(encrypt_page(html, password, logo), encoding="utf-8")
         protecao = "🔒 protegido por senha (AES-256)"
     else:
         OUTPUT_FILE.write_text(html, encoding="utf-8")
