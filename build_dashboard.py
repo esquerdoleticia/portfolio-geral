@@ -30,20 +30,34 @@ def logo_data_uri():
     return "data:image/svg+xml;base64," + base64.b64encode(svg).decode("ascii")
 
 
-# Troca de abas (passado como argumento — chaves não são interpretadas pelo .format)
-TAB_SCRIPT = """
+# Navegação: home com cards + views + submenus (passado como argumento do .format)
+NAV_SCRIPT = """
 (function(){
-  var tabs = document.querySelectorAll('.tab');
-  var panels = document.querySelectorAll('.panel');
-  for (var i = 0; i < tabs.length; i++) {
-    tabs[i].addEventListener('click', function(){
-      for (var j = 0; j < tabs.length; j++) { tabs[j].classList.remove('active'); }
-      for (var k = 0; k < panels.length; k++) { panels[k].classList.add('hidden'); }
+  function show(view){
+    var views = document.querySelectorAll('.view');
+    for (var i = 0; i < views.length; i++) { views[i].classList.add('hidden'); }
+    var el = document.getElementById('view-' + view);
+    if (el) { el.classList.remove('hidden'); }
+    window.scrollTo(0, 0);
+  }
+  var navBtns = document.querySelectorAll('[data-go]');
+  for (var i = 0; i < navBtns.length; i++) {
+    navBtns[i].addEventListener('click', function(){ show(this.getAttribute('data-go')); });
+  }
+  var subs = document.querySelectorAll('.subtab');
+  for (var j = 0; j < subs.length; j++) {
+    subs[j].addEventListener('click', function(){
+      var box = this.closest('.view');
+      var tabs = box.querySelectorAll('.subtab');
+      for (var k = 0; k < tabs.length; k++) { tabs[k].classList.remove('active'); }
+      var sv = box.querySelectorAll('.subview');
+      for (var m = 0; m < sv.length; m++) { sv[m].classList.add('hidden'); }
       this.classList.add('active');
-      document.getElementById('panel-' + this.getAttribute('data-tab')).classList.remove('hidden');
+      document.getElementById('sub-' + this.getAttribute('data-sub')).classList.remove('hidden');
       window.scrollTo(0, 0);
     });
   }
+  show('home');
 })();
 """
 
@@ -248,6 +262,7 @@ def extract_portfolio(ws):
         counts = {key: int(num(r.get(col))) for key, col, *_ in STAGES}
         produtos.append({
             "produto": nome,
+            "categoria": str(r.get("Categoria") or "").strip(),
             "fase": str(r.get("Fase") or "").strip(),
             "sinal": str(r.get("Sinal") or "").strip(),
             "total": total,
@@ -293,6 +308,7 @@ def extract_roadmap(ws):
                 equipe.append(n)
         itens.append({
             "produto": str(r.get("Produto") or "").strip(),
+            "categoria": str(r.get("Categoria") or "").strip(),
             "epico": str(r.get("Épico") or "").strip(),
             "inicio": inicio,
             "fim": fim,
@@ -408,8 +424,8 @@ def render_roadmap(itens):
     for m, d in zip(MONTHS, MONTH_DAYS):
         months_html += f'<div class="rm-month" style="flex:{d}">{m}</div>'
 
-    # Marcador "estamos aqui" no começo de agosto/2026
-    marker = (date(2026, 8, 1) - GANTT_START).days / GANTT_DAYS * 100
+    # Marcador "estamos aqui" em meados de agosto/2026
+    marker = (date(2026, 8, 15) - GANTT_START).days / GANTT_DAYS * 100
     marker_head = f'<div class="rm-now" style="left:{marker:.2f}%"><span>estamos aqui</span></div>'
     overlay = (f'<div class="rm-now-overlay"><div class="rm-now-spacer"></div>'
                f'<div class="rm-now-track"><div class="rm-now-line" style="left:{marker:.2f}%"></div></div></div>')
@@ -564,6 +580,27 @@ def render_financeiro(fin):
     {prop_nota_html}"""
 
 
+def render_view(kpis, produtos, roadmap, bloqueios):
+    """Visão completa de um grupo: KPIs + cards + roadmap + histórico de bloqueios."""
+    return f"""
+    <section>
+      <h2>Visão geral — Portfólio</h2>
+      <div class="kpi-row">{render_kpis(kpis)}</div>
+    </section>
+    <section>
+      <h2>Visão por produto</h2>
+      <div class="cards-grid">{render_cards(produtos)}</div>
+    </section>
+    <section>
+      <h2>Roadmap — Iniciativas 2026</h2>
+      {render_roadmap(roadmap)}
+    </section>
+    <section>
+      <h2>Histórico de bloqueios</h2>
+      {render_bloqueios(bloqueios)}
+    </section>"""
+
+
 PAGE_TEMPLATE = """<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -586,35 +623,45 @@ PAGE_TEMPLATE = """<!doctype html>
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     background: var(--bg);
     color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
   }}
+  main {{ flex: 1 0 auto; }}
   header.top {{
     max-width: 1240px; margin: 0 auto; padding: 36px 24px 20px;
     border-bottom: 1px solid var(--border);
   }}
-  header.top .brandrow {{ display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }}
+  header.top .brandrow {{ display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 12px; }}
   header.top .logo {{ height: 40px; width: auto; display: block; }}
   header.top .brandtext {{ font-size: 0.9rem; font-weight: 700; color: var(--navy); }}
-  header.top h1 {{ margin: 0; font-size: 2.1rem; font-weight: 800; color: var(--navy); letter-spacing: -0.01em; }}
+  header.top h1 {{ margin: 0; font-size: 2.1rem; font-weight: 800; color: var(--navy);
+    letter-spacing: -0.01em; text-align: center; text-transform: uppercase; }}
   header.top .subtitle {{ margin: 10px 0 0; color: var(--muted); font-size: 0.95rem; }}
 
-  /* Menu de abas */
-  .tabs {{ max-width: 1240px; margin: 0 auto; padding: 18px 24px 0; display: flex; gap: 8px; flex-wrap: wrap; }}
-  .tab {{ padding: 10px 18px; border: 1px solid var(--border); border-radius: 999px; background: #fff;
-    color: var(--muted); font-size: 0.9rem; font-weight: 600; cursor: pointer; font-family: inherit; }}
-  .tab:hover {{ border-color: #CBD5E1; color: var(--navy); }}
-  .tab.active {{ background: var(--navy); color: #fff; border-color: var(--navy); }}
-  .panel.hidden {{ display: none; }}
-
-  /* Produtos internos — em construção */
-  .construcao {{ text-align: center; padding: 64px 24px; }}
-  .construcao .logo-big {{ height: 84px; opacity: 0.92; margin-bottom: 22px; }}
-  .construcao h2 {{ font-size: 1.5rem; color: var(--navy); text-transform: none; letter-spacing: normal; margin: 0 0 10px; }}
-  .construcao p {{ color: var(--muted); font-size: 1rem; margin: 6px 0; }}
-  .construcao p.sub {{ max-width: 470px; margin: 10px auto 0; font-size: 0.9rem; }}
-  .construcao .selo {{ display: inline-block; margin-top: 8px; background: #FEF3E7; color: var(--orange);
-    font-size: 0.8rem; font-weight: 700; padding: 6px 14px; border-radius: 999px; }}
+  /* Navegação: home + views */
+  .view.hidden {{ display: none; }}
+  .home-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }}
+  .menu-card {{ text-align: left; background: #fff; border: 1px solid var(--border); border-radius: 16px;
+    padding: 30px 26px; cursor: pointer; font-family: inherit; display: flex; flex-direction: column; gap: 6px;
+    transition: transform .15s, box-shadow .15s, border-color .15s; }}
+  .menu-card:hover {{ border-color: var(--orange); box-shadow: 0 10px 28px rgba(13,33,55,.10); transform: translateY(-3px); }}
+  .mc-icon {{ font-size: 2rem; line-height: 1; margin-bottom: 6px; }}
+  .menu-card h3 {{ margin: 0; font-size: 1.25rem; color: var(--navy); }}
+  .menu-card p {{ margin: 0; color: var(--muted); font-size: 0.9rem; }}
+  .mc-meta {{ margin-top: 10px; font-size: 0.78rem; color: #94A3B8; }}
+  .mc-sub {{ margin-top: 6px; font-size: 0.74rem; color: var(--orange); font-weight: 600; }}
+  .back {{ background: none; border: 0; color: var(--orange); font-weight: 600; font-size: 0.9rem;
+    cursor: pointer; padding: 0 0 16px; font-family: inherit; }}
+  .subtabs {{ display: flex; gap: 8px; margin-bottom: 22px; flex-wrap: wrap; }}
+  .subtab {{ padding: 8px 16px; border: 1px solid var(--border); border-radius: 999px; background: #fff;
+    color: var(--muted); font-size: 0.85rem; font-weight: 600; cursor: pointer; font-family: inherit; }}
+  .subtab:hover {{ border-color: #CBD5E1; color: var(--navy); }}
+  .subtab.active {{ background: var(--navy); color: #fff; border-color: var(--navy); }}
+  .subview.hidden {{ display: none; }}
 
   main {{ max-width: 1240px; margin: 0 auto; padding: 28px 24px 80px; }}
+  @media (max-width: 900px) {{ .home-grid {{ grid-template-columns: 1fr; }} }}
   section {{ margin-bottom: 44px; }}
   section h2 {{
     font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
@@ -731,8 +778,8 @@ PAGE_TEMPLATE = """<!doctype html>
   .sit-badge {{ font-size: 0.72rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; }}
   .fin-janelas td:last-child {{ font-weight: 600; color: var(--navy); }}
 
-  footer {{ text-align: center; color: var(--muted); font-size: 0.75rem; padding: 24px;
-    display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }}
+  footer {{ text-align: center; color: var(--muted); font-size: 0.75rem; padding: 24px; }}
+  footer .foot-line {{ display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }}
   footer .foot-logo {{ height: 20px; opacity: 0.7; }}
 
   @media (max-width: 1080px) {{
@@ -753,58 +800,64 @@ PAGE_TEMPLATE = """<!doctype html>
     <img class="logo" src="{logo}" alt="Grupo Fênix Educação">
     <span class="brandtext">Grupo Fênix Educação</span>
   </div>
-  <h1>Produtos Digitais - 2026</h1>
-  <p class="subtitle">Atualização: {updated_at} · {num_produtos} produtos · {num_iniciativas} iniciativas estimadas</p>
+  <h1>Produtos Digitais</h1>
 </header>
 
-<nav class="tabs">
-  <button class="tab active" data-tab="roadmap">Roadmap geral</button>
-  <button class="tab" data-tab="pf">Contrato SESI</button>
-  <button class="tab" data-tab="internos">Produtos internos</button>
-</nav>
-
 <main>
-  <div class="panel" id="panel-roadmap">
-    <section>
-      <h2>Visão geral — Portfólio</h2>
-      <div class="kpi-row">{kpis_html}</div>
-    </section>
-    <section>
-      <h2>Visão por produto</h2>
-      <div class="cards-grid">{cards_html}</div>
-    </section>
-    <section>
-      <h2>Roadmap — Iniciativas 2026</h2>
-      {roadmap_html}
-    </section>
-    <section>
-      <h2>Histórico de bloqueios</h2>
-      {bloqueios_html}
-    </section>
-  </div>
-
-  <div class="panel hidden" id="panel-pf">
-    <section>
-      <h2>Pontos de Função</h2>
-      {financeiro_html}
-    </section>
-  </div>
-
-  <div class="panel hidden" id="panel-internos">
-    <div class="construcao">
-      <img class="logo-big" src="{logo}" alt="">
-      <h2>Produtos internos</h2>
-      <span class="selo">🚧 Em construção</span>
-      <p class="sub">Em breve, o acompanhamento dos produtos internos da Fênix (LeituraTech, Timeline, FNXCore e mais) — com roadmap, status e métricas próprias.</p>
+  <!-- HOME: cards de menu -->
+  <div class="view" id="view-home">
+    <div class="home-grid">
+      <button class="menu-card" data-go="externos">
+        <span class="mc-icon">🤝</span>
+        <h3>Produtos externos</h3>
+        <span class="mc-meta">{ext_produtos} produtos · {ext_iniciativas} iniciativas</span>
+      </button>
+      <button class="menu-card" data-go="internos">
+        <span class="mc-icon">🏠</span>
+        <h3>Produtos internos</h3>
+        <span class="mc-meta">{int_produtos} produtos · {int_iniciativas} iniciativas</span>
+      </button>
+      <button class="menu-card" data-go="geral">
+        <span class="mc-icon">📊</span>
+        <h3>Roadmap geral</h3>
+        <span class="mc-meta">{num_produtos} produtos · {num_iniciativas} iniciativas</span>
+      </button>
     </div>
+  </div>
+
+  <!-- PRODUTOS EXTERNOS (com submenu Contrato SESI) -->
+  <div class="view hidden" id="view-externos">
+    <button class="back" data-go="home">← Início</button>
+    <div class="subtabs">
+      <button class="subtab active" data-sub="externos-geral">Visão geral</button>
+      <button class="subtab" data-sub="externos-contrato">Pontos de Função</button>
+    </div>
+    <div class="subview" id="sub-externos-geral">{ext_view}</div>
+    <div class="subview hidden" id="sub-externos-contrato">
+      <section>
+        <h2>Pontos de Função</h2>
+        {financeiro_html}
+      </section>
+    </div>
+  </div>
+
+  <!-- PRODUTOS INTERNOS -->
+  <div class="view hidden" id="view-internos">
+    <button class="back" data-go="home">← Início</button>
+    {int_view}
+  </div>
+
+  <!-- ROADMAP GERAL -->
+  <div class="view hidden" id="view-geral">
+    <button class="back" data-go="home">← Início</button>
+    {geral_view}
   </div>
 </main>
 
 <footer>
-  <img class="foot-logo" src="{logo}" alt="">
-  <span>Grupo Fênix Educação · gerado automaticamente a partir da planilha de gestão do portfólio.</span>
+  <div class="foot-line"><img class="foot-logo" src="{logo}" alt=""><span>Grupo Fênix Educação · Última atualização em {updated_at}</span></div>
 </footer>
-<script>{tab_script}</script>
+<script>{nav_script}</script>
 </body>
 </html>
 """
@@ -910,17 +963,34 @@ def build():
     wb.close()
 
     logo = logo_data_uri()
+
+    # Separa por categoria (interno x externo/SESI)
+    prod_int = [p for p in produtos if p["categoria"] == "Interno"]
+    prod_ext = [p for p in produtos if p["categoria"] != "Interno"]
+    rm_int = [i for i in roadmap if i["categoria"] == "Interno"]
+    rm_ext = [i for i in roadmap if i["categoria"] != "Interno"]
+    internos_nomes = {p["produto"] for p in prod_int}
+    bloq_int = [b for b in bloqueios if str(b.get("Produto") or "").strip() in internos_nomes]
+    bloq_ext = [b for b in bloqueios if str(b.get("Produto") or "").strip() not in internos_nomes]
+
+    geral_view = render_view(kpis, produtos, roadmap, bloqueios)
+    ext_view = render_view(kpis_from_portfolio(prod_ext), prod_ext, rm_ext, bloq_ext)
+    int_view = render_view(kpis_from_portfolio(prod_int), prod_int, rm_int, bloq_int)
+
     html = PAGE_TEMPLATE.format(
         navy=NAVY, orange=ORANGE,
         logo=logo,
-        tab_script=TAB_SCRIPT,
+        nav_script=NAV_SCRIPT,
         updated_at=datetime.now().strftime("%d/%m/%Y"),
         num_produtos=len(produtos),
         num_iniciativas=len(roadmap),
-        kpis_html=render_kpis(kpis),
-        cards_html=render_cards(produtos),
-        roadmap_html=render_roadmap(roadmap),
-        bloqueios_html=render_bloqueios(bloqueios),
+        ext_produtos=len(prod_ext),
+        ext_iniciativas=len(rm_ext),
+        int_produtos=len(prod_int),
+        int_iniciativas=len(rm_int),
+        geral_view=geral_view,
+        ext_view=ext_view,
+        int_view=int_view,
         financeiro_html=render_financeiro(fin),
     )
 
