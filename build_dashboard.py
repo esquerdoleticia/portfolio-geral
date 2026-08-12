@@ -115,6 +115,16 @@ def find_row_with(ws, col, value, start=1, end=250):
     raise ValueError(f"Não encontrei '{value}' na coluna {col} da aba '{ws.title}'")
 
 
+def find_row_starting(ws, col, prefix, start=1, end=250):
+    """Como find_row_with, mas casa por prefixo — tolera complementos no rótulo
+    da planilha (ex: 'JANELAS DE FATURAMENTO (fim do desenvolvimento)')."""
+    for r in range(start, end + 1):
+        cell_val = ws.cell(row=r, column=col).value
+        if cell_val is not None and str(cell_val).strip().startswith(prefix):
+            return r
+    raise ValueError(f"Não encontrei nada começando com '{prefix}' na coluna {col} da aba '{ws.title}'")
+
+
 def read_table(ws, header_row, key_col=1):
     """Lê tabela a partir de header_row, parando quando a coluna-chave fica vazia."""
     max_col = ws.max_column
@@ -196,7 +206,7 @@ def extract_financeiro(ws):
     faturado_total = dict(linhas)["TOTAL"]["faturado"]
 
     # Janelas de faturamento (tabela abaixo de "JANELAS DE FATURAMENTO").
-    jan_row = find_row_with(ws, 1, "JANELAS DE FATURAMENTO")
+    jan_row = find_row_starting(ws, 1, "JANELAS DE FATURAMENTO")
     janelas = []
     r = jan_row + 1
     while True:
@@ -424,11 +434,30 @@ def render_roadmap(itens):
     for m, d in zip(MONTHS, MONTH_DAYS):
         months_html += f'<div class="rm-month" style="flex:{d}">{m}</div>'
 
-    # Marcador "estamos aqui" em meados de agosto/2026
-    marker = (date(2026, 8, 15) - GANTT_START).days / GANTT_DAYS * 100
-    marker_head = f'<div class="rm-now" style="left:{marker:.2f}%"><span>estamos aqui</span></div>'
+    # Linhas divisórias entre meses — calculadas pelos mesmos dias acumulados das
+    # colunas do cabeçalho (proporcionais, não 12 partes iguais), pra alinhar certinho.
+    month_lines = ""
+    cumulative = 0
+    for d in MONTH_DAYS[:-1]:
+        cumulative += d
+        pos = cumulative / GANTT_DAYS * 100
+        month_lines += f'<div class="rm-month-line" style="left:{pos:.4f}%"></div>'
+    month_overlay = (f'<div class="rm-month-overlay"><div class="rm-now-spacer"></div>'
+                      f'<div class="rm-now-track">{month_lines}</div></div>')
+
+    # Marcadores verticais de referência no roadmap (data, rótulo, classe de cor)
+    MARCADORES = [
+        (date(2026, 8, 15), "hoje", "hoje"),
+        (date(2026, 12, 1), "último faturamento", "fat"),
+    ]
+    marker_head = ""
+    marker_tracks = ""
+    for dia, rotulo, cls in MARCADORES:
+        pos = (dia - GANTT_START).days / GANTT_DAYS * 100
+        marker_head += f'<div class="rm-now rm-now-{cls}" style="left:{pos:.2f}%"><span>{rotulo}</span></div>'
+        marker_tracks += f'<div class="rm-now-line rm-now-line-{cls}" style="left:{pos:.2f}%"></div>'
     overlay = (f'<div class="rm-now-overlay"><div class="rm-now-spacer"></div>'
-               f'<div class="rm-now-track"><div class="rm-now-line" style="left:{marker:.2f}%"></div></div></div>')
+               f'<div class="rm-now-track">{marker_tracks}</div></div>')
 
     rows_html = ""
     for it in itens:
@@ -466,7 +495,7 @@ def render_roadmap(itens):
     <div class="rm-legend">{legend}</div>
     <div class="rm-scroll"><div class="rm-inner">
       <div class="rm-head"><div class="rm-side"></div><div class="rm-timeline rm-months">{months_html}{marker_head}</div></div>
-      <div class="rm-rows">{overlay}{rows_html}</div>
+      <div class="rm-rows">{month_overlay}{overlay}{rows_html}</div>
     </div></div>"""
 
 
@@ -551,7 +580,7 @@ def render_financeiro(fin):
         prop_nota_html += f'<p class="fin-hint">{escape(fin["prop_nota"])}</p>'
     prop_nota_html += f'<p class="fin-hint">{escape(prop_extra)}</p>'
 
-    return f"""
+    base = f"""
     <div class="fin-cards">{tiles}</div>
     <div class="fin-table-wrap">
       <table class="fin-table">
@@ -559,8 +588,9 @@ def render_financeiro(fin):
         <tbody>{linhas}</tbody>
       </table>
     </div>
-    <p class="fin-ritmo">{ritmo}</p>
+    <p class="fin-ritmo">{ritmo}</p>"""
 
+    extra = f"""
     <h3 class="fin-sub-title">Janelas de faturamento</h3>
     <p class="fin-hint">Prazos mensais de envio ao SESI. Total faturável dentro do ciclo: <strong>{fmt_pf0(fin['total_faturavel'])} PF</strong>.<br>
     Estimativas considerando a esteira completa de desenvolvimento — ou seja, o faturamento pode correr algumas semanas antes do fim do delivery, ocorrendo a redistribuição dos valores mensais.</p>
@@ -578,6 +608,8 @@ def render_financeiro(fin):
       </table>
     </div>
     {prop_nota_html}"""
+
+    return base, extra
 
 
 def render_view(kpis, produtos, roadmap, bloqueios):
@@ -726,14 +758,14 @@ PAGE_TEMPLATE = """<!doctype html>
   .rm-epic b {{ font-size: 0.76rem; color: #4A3F1A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
   .rm-epic i {{ font-size: 0.68rem; color: #A08A3A; font-style: normal; }}
   .rm-timeline {{ height: 34px; margin-right: 12px; }}
-  .rm-rows .rm-timeline {{
-    background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(100%/12 - 1px), #EEF1F5 calc(100%/12 - 1px), #EEF1F5 calc(100%/12));
-  }}
+  /* Linhas divisórias entre meses — alinhadas aos dias reais de cada mês (não 12 partes iguais) */
+  .rm-month-overlay {{ position: absolute; top: 0; bottom: 0; left: 0; right: 0; display: flex; pointer-events: none; }}
+  .rm-month-line {{ position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--border); }}
   .rm-bar {{ position: absolute; top: 5px; height: 24px; border-radius: 5px; padding: 0 8px;
     display: flex; flex-direction: column; justify-content: center; overflow: hidden; }}
   .rm-bar b {{ font-size: 0.68rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
   .rm-bar small {{ font-size: 0.6rem; opacity: 0.85; line-height: 1; }}
-  /* Marcador "estamos aqui" (linha contínua na data de hoje) */
+  /* Marcadores verticais de referência (linhas contínuas no roadmap) */
   .rm-now-overlay {{ position: absolute; top: 0; bottom: 0; left: 0; right: 0;
     display: flex; pointer-events: none; z-index: 3; }}
   .rm-now-spacer {{ flex: 0 0 340px; }}
@@ -743,6 +775,9 @@ PAGE_TEMPLATE = """<!doctype html>
   .rm-now span {{ position: absolute; bottom: -9px; left: 50%; transform: translateX(-50%);
     background: {orange}; color: #fff; font-size: 0.56rem; font-weight: 700;
     padding: 1px 6px; border-radius: 4px; white-space: nowrap; }}
+  .rm-now-line-fat {{ border-left-color: {navy}; }}
+  .rm-now-fat {{ border-left-color: {navy}; }}
+  .rm-now-fat span {{ background: {navy}; }}
 
   /* Histórico de bloqueios */
   .hist-item {{ background: var(--card-bg); border: 1px solid var(--border);
@@ -955,7 +990,7 @@ def read_password():
 
 def build():
     wb = load_workbook(PORTFOLIO_FILE, read_only=True, data_only=True)
-    fin = extract_financeiro(wb["Contrato"])
+    fin_data = extract_financeiro(wb["Contrato"])
     produtos = extract_portfolio(wb["Portfólio"])
     kpis = kpis_from_portfolio(produtos)
     roadmap = extract_roadmap(wb["Iniciativas"])
@@ -991,7 +1026,7 @@ def build():
         geral_view=geral_view,
         ext_view=ext_view,
         int_view=int_view,
-        financeiro_html=render_financeiro(fin),
+        financeiro_html=render_financeiro(fin_data)[0],  # só base (sem janelas/proposta)
     )
 
     password = read_password()
@@ -1008,7 +1043,7 @@ def build():
     print(f"   Produtos (cards): {len(produtos)}")
     print(f"   Iniciativas no roadmap: {len(roadmap)}")
     print(f"   Bloqueios (histórico): {len(bloqueios)}")
-    print(f"   Financeiro: contratado {fin['contratado']}, faturado {fin['faturado_total']}")
+    print(f"   Financeiro: contratado {fin_data['contratado']}, faturado {fin_data['faturado_total']}")
 
 
 # ---------------------------------------------------------------------------
