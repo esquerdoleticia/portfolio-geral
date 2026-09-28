@@ -172,6 +172,10 @@ SEM2_SCRIPT = """
   }
 
   function renderKpis(){
+    // KPIs suspensos até validação com o time: só renderiza se o contêiner
+    // <div class="kpi-row" id="s2-kpis"> voltar ao template.
+    var box = document.getElementById('s2-kpis');
+    if (!box) return;
     // Despriorizadas ficam fora dos KPIs, a não ser que tenham ido ao Gantt ou sido concluídas
     var items = all().filter(function(it){ return !it.desp || where(it) !== 'rest'; }).map(val);
     var n = function(list){
@@ -184,7 +188,7 @@ SEM2_SCRIPT = """
       ['Paradas', n(PARADA), 'Bloqueadas e pausadas', '#F59E0B'],
       ['Concluídas', n([DONE]), 'Entregues no ano', '#22C55E']
     ];
-    document.getElementById('s2-kpis').innerHTML = tiles.map(function(t){
+    box.innerHTML = tiles.map(function(t){
       return '<div class="kpi-card" style="--accent:' + t[3] + '"><div class="kpi-value">' + t[1] +
         '</div><div class="kpi-label">' + t[0] + '</div><div class="kpi-sub">' + esc(t[2]) + '</div></div>';
     }).join('');
@@ -1210,10 +1214,6 @@ PAGE_TEMPLATE = """<!doctype html>
     </div>
     <div class="subview" id="sub-externos-geral">{ext_view}</div>
     <div class="subview hidden" id="sub-externos-sem2">
-      <section>
-        <h2>Visão geral — Portfólio</h2>
-        <div class="kpi-row" id="s2-kpis"></div>
-      </section>
       <section>
         <div class="s2-bar-top">
           <h2>Roadmap — 2º semestre 2026</h2>
