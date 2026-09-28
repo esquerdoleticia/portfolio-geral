@@ -115,6 +115,12 @@ SEM2_CSS = """
   .s2-group li em { font-style: normal; font-weight: 700; color: var(--navy); white-space: nowrap; }
   .s2-group.s2-done { border-left-color: #22C55E; }
   .s2-group.s2-done li em { color: #16A34A; }
+  .s2-details { background: #fff; border: 1px solid var(--border); border-radius: 12px; }
+  .s2-details summary { cursor: pointer; padding: 14px 18px; font-weight: 700; color: var(--navy);
+    font-size: 0.95rem; }
+  .s2-details[open] summary { border-bottom: 1px solid var(--border); }
+  .s2-details .fin-table { border: 0; border-radius: 0 0 12px 12px; }
+  .s2-details .nao-conta { color: #94A3B8; }
   .s2-edit select, .s2-edit input[type=text] { font-family: inherit; font-size: 0.8rem; padding: 4px 6px;
     border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: #fff; }
   .s2-edit input.s2-wide { width: 220px; }
@@ -230,7 +236,7 @@ SEM2_SCRIPT = """
         '<span class="rm-avatars">' + (it.equipe || []).map(avatar).join('') + '</span>' +
         '<span class="rm-epic"><b>' + esc(v.epico) + '</b><i>' + evo(v) + '</i></span></div>' +
         '<div class="rm-timeline">' + bar + '</div>' +
-        '<div class="s2-pf"><b>' + fmtPf(v.pf) + ' PF</b><small>acum. ' + fmtPf(cum) + '</small></div></div>';
+        '<div class="s2-pf"><b>' + fmtPf(v.pf) + ' PF</b></div></div>';
     });
     if (!sel.length) rows = '<div class="s2-empty">Nenhuma iniciativa selecionada. Use “Editar” para escolher o que exibir.</div>';
     var ov = function(inner, cls){ return '<div class="' + cls + '"><div class="rm-now-spacer"></div><div class="rm-now-track">' +
@@ -238,7 +244,7 @@ SEM2_SCRIPT = """
     document.getElementById('s2-gantt').innerHTML =
       '<div class="rm-scroll"><div class="rm-inner">' +
       '<div class="rm-head"><div class="rm-side"></div><div class="rm-timeline rm-months">' + head + mHead +
-      '</div><div class="s2-pf">PF · acumulado</div></div>' +
+      '</div><div class="s2-pf">PF</div></div>' +
       '<div class="rm-rows">' + ov(lines, 'rm-month-overlay') + ov(mLines, 'rm-now-overlay') + rows + '</div>' +
       (sel.length ? '<div class="s2-total"><div class="rm-side">Total de PF (' + sel.length + ' iniciativas)</div>' +
         '<div class="rm-timeline"></div><div class="s2-pf"><b>' + fmtPf(cum) + ' PF</b></div></div>' : '') +
@@ -291,7 +297,7 @@ SEM2_SCRIPT = """
   function refresh(){
     renderKpis(); renderGantt();
     renderGroups('s2-list', 'rest', evo, 'Todos os entregáveis estão no Gantt.');
-    renderGroups('s2-done', 'done', function(v){ return v.pf == null ? '' : fmtPf(v.pf) + ' PF'; },
+    renderGroups('s2-done', 'done', function(){ return ''; },
       'Nenhuma iniciativa concluída.');
   }
 
@@ -632,6 +638,7 @@ def extract_roadmap(ws):
 
 
 SEM2_SITUACOES = {"Ativo", "Despriorizado", "Concluído"}  # candidatos da aba 2º SEM
+SEM2_PRODUTO_OVERRIDE = {"EJA-03": "SSE-D"}  # Atualização PHP: exibido como SSE-D nesta aba
 SEM2_INICIO = date(2026, 7, 1)
 SEM2_FIM = date(2026, 12, 31)
 
@@ -659,9 +666,10 @@ def extract_sem2(ws):
         status = str(r.get("Status") or "").strip() or "Não iniciada"
         if situacao == "Concluído":
             status = "Concluída"
+        code = str(r.get("Código") or "").strip()
         itens.append({
-            "code": str(r.get("Código") or "").strip(),
-            "produto": str(r.get("Produto") or "").strip(),
+            "code": code,
+            "produto": SEM2_PRODUTO_OVERRIDE.get(code, str(r.get("Produto") or "").strip()),
             "epico": str(r.get("Épico") or "").strip(),
             "ini": inicio.isoformat() if inicio else "",
             "fim": fim.isoformat() if fim else "",
@@ -840,6 +848,37 @@ def render_roadmap(itens):
       <div class="rm-head"><div class="rm-side"></div><div class="rm-timeline rm-months">{months_html}{marker_head}</div></div>
       <div class="rm-rows">{month_overlay}{overlay}{rows_html}</div>
     </div></div>"""
+
+
+# Dimensionamento da Atualização PHP por sistema: (sistema, PF transacionais, PF de dados).
+# PF de dados não entram na base contável; PF da atualização = base × 0,30.
+PHP_SISTEMAS = [
+    ("Educar.Tech", 1491, 305),
+    ("RDS", 1251, 283),
+    ("AVA PSGE", 1145, 243),
+    ("AVA EC", 872, 237),
+    ("ESR (Backend)", 869, 165),
+    ("Pedidos", 299, 108),
+]
+PHP_FATOR = 0.30
+
+
+def render_php_details():
+    def linha(nome, trans, dados, cls=""):
+        return (f'<tr{cls}><td>{escape(nome)}</td><td>{fmt_pf0(trans)}</td>'
+                f'<td><span class="nao-conta">{fmt_pf0(dados)} → não conta</span></td>'
+                f'<td>{fmt_pf0(trans)}</td><td><strong>{fmt_pf(trans * PHP_FATOR)}</strong></td></tr>')
+    rows = "".join(linha(*s) for s in PHP_SISTEMAS)
+    rows += linha("Total", sum(s[1] for s in PHP_SISTEMAS), sum(s[2] for s in PHP_SISTEMAS),
+                  ' class="fin-total"')
+    return f"""
+          <div class="fin-table-wrap">
+            <table class="fin-table">
+              <thead><tr><th>Sistema</th><th>PF transacionais</th><th>PF de dados</th>
+                <th>Base contável</th><th>PF da atualização (×0,30)</th></tr></thead>
+              <tbody>{rows}</tbody>
+            </table>
+          </div>"""
 
 
 def render_bloqueios(bloqueios):
@@ -1226,6 +1265,12 @@ PAGE_TEMPLATE = """<!doctype html>
         <div id="s2-gantt"></div>
       </section>
       <section>
+        <details class="s2-details">
+          <summary>Detalhes Atualização PHP</summary>
+          {php_details}
+        </details>
+      </section>
+      <section>
         <h2>Demais entregáveis</h2>
         <div class="s2-list" id="s2-list"></div>
       </section>
@@ -1397,6 +1442,7 @@ def build():
         int_view=int_view,
         financeiro_html=render_financeiro(fin_data)[0],  # só base (sem janelas/proposta)
         sem2_css=SEM2_CSS,
+        php_details=render_php_details(),
         sem2_data=json.dumps(sem2, ensure_ascii=False).replace("</", "<\\/"),
         sem2_script=(SEM2_SCRIPT
                      .replace("__PALETTE__", json.dumps(AVATAR_PALETTE))
