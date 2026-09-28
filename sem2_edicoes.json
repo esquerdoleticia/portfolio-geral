@@ -1,0 +1,23 @@
+{
+  "sel": {
+    "PENSE-03": false,
+    "EC-01": false,
+    "EC-02": false,
+    "RDS-03": false,
+    "RDS-02": false
+  },
+  "ed": {
+    "EJA-06": {"evolucao": 0.75, "fim": "2026-12-15", "pf": 150},
+    "EJA-03": {"pf": 1778, "ini": "2026-08-04", "fim": "2026-10-30", "status": "Desenvolvimento", "evolucao": 0.6},
+    "EB-01": {"status": "Refinamento", "fim": "2026-12-15", "pf": 200, "evolucao": 0.35},
+    "ESR-01": {"status": "Homologação", "pf": 150, "fim": "2026-11-06", "evolucao": 0.8},
+    "PENSE-04": {"status": "Desenvolvimento", "evolucao": 0.8, "pf": 150},
+    "EJA-02": {"evolucao": 0.65, "fim": "2026-11-20"},
+    "EJA-01": {"pf": 84, "fim": "2026-10-07"},
+    "EB-03": {"fim": "2026-10-09"},
+    "PSGE-01": {"status": "Refinamento", "fim": "2026-10-30"},
+    "RDS-01": {"evolucao": 0.3, "pf": 200},
+    "EJA-04": {"evolucao": 0.7, "fim": "2026-10-23", "pf": 150},
+    "SSE-04": {"status": "Desenvolvimento", "evolucao": 0.4}
+  }
+}

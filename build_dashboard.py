@@ -639,6 +639,7 @@ def extract_roadmap(ws):
 
 SEM2_SITUACOES = {"Ativo", "Despriorizado", "Concluído"}  # candidatos da aba 2º SEM
 SEM2_PRODUTO_OVERRIDE = {"EJA-03": "SSE-D"}  # Atualização PHP: exibido como SSE-D nesta aba
+SEM2_EDICOES_FILE = BASE_DIR / "sem2_edicoes.json"
 SEM2_INICIO = date(2026, 7, 1)
 SEM2_FIM = date(2026, 12, 31)
 
@@ -680,6 +681,14 @@ def extract_sem2(ws):
             "desp": situacao == "Despriorizado",
             "def": situacao == "Ativo" and no_semestre,
         })
+    # Edições feitas na página antes da apresentação viram o novo padrão da aba
+    # (valem em qualquer navegador; "Restaurar original" volta para elas).
+    if SEM2_EDICOES_FILE.exists():
+        edicoes = json.loads(SEM2_EDICOES_FILE.read_text(encoding="utf-8"))
+        for it in itens:
+            if it["code"] in edicoes.get("sel", {}):
+                it["def"] = edicoes["sel"][it["code"]]
+            it.update(edicoes.get("ed", {}).get(it["code"], {}))
     itens.sort(key=lambda x: (x["ini"] or "9999", x["produto"]))
     return itens
 
