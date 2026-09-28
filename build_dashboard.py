@@ -7,6 +7,7 @@ Uso:
     python3 build_dashboard.py
 """
 import base64
+import json
 import os
 import subprocess
 from datetime import date, datetime, timedelta
@@ -58,6 +59,283 @@ NAV_SCRIPT = """
     });
   }
   show('home');
+})();
+"""
+
+# Aba 2º SEM (Produtos externos): Gantt JUL–DEZ com seleção, datas e PF editáveis
+# na própria página. A planilha só dá o ponto de partida: seleção, status, evolução, datas, PF e
+# entregáveis novos ficam no localStorage do navegador de quem editou.
+SEM2_CSS = """
+  .s2-bar-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .s2-bar-top h2 { margin: 0; }
+  .s2-actions { display: flex; gap: 8px; }
+  .s2-btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px; background: #fff;
+    color: var(--muted); font-size: 0.8rem; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .s2-btn:hover { border-color: var(--orange); color: var(--navy); }
+  .s2-btn.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+  .s2-btn.hidden, .s2-edit.hidden { display: none; }
+  .s2-edit { background: #fff; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px;
+    max-height: 420px; overflow: auto; }
+  .s2-edit table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .s2-edit th { position: sticky; top: 0; background: #F8FAFC; text-align: left; font-size: 0.7rem;
+    text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 10px 12px;
+    border-bottom: 1px solid var(--border); }
+  .s2-edit td { padding: 6px 12px; border-bottom: 1px solid var(--border); }
+  .s2-edit tr.off td { color: #94A3B8; }
+  .s2-edit input[type=date], .s2-edit input[type=number] { font-family: inherit; font-size: 0.8rem;
+    padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
+  .s2-edit input[type=number] { width: 80px; }
+  .s2-edit input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--orange); cursor: pointer; }
+  .s2-pf { flex: 0 0 130px; text-align: right; padding-right: 16px; display: flex; flex-direction: column;
+    justify-content: center; }
+  .s2-pf b { font-size: 0.82rem; color: var(--navy); }
+  .s2-pf small { font-size: 0.66rem; color: #94A3B8; }
+  .rm-head .s2-pf { font-size: 0.66rem; font-weight: 700; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.04em; }
+  .s2-endspacer { flex: 0 0 130px; }
+  #s2-gantt .rm-side, #s2-gantt .rm-epic { min-width: 0; }
+  .s2-bar { position: absolute; top: 8px; height: 18px; border-radius: 5px; background: #7FA6DB; }
+  .s2-bar.cut-l { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  .s2-bar.cut-r { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .s2-bar.cut-r::after { content: "›"; position: absolute; right: -11px; top: -4px; font-size: 1rem;
+    font-weight: 700; color: #7FA6DB; }
+  .s2-total { display: flex; align-items: center; min-height: 44px; border-top: 1px solid var(--border);
+    background: #F8FAFC; }
+  .s2-total .rm-side { font-size: 0.8rem; font-weight: 700; color: var(--navy); }
+  .s2-total .s2-pf b { font-size: 1rem; color: var(--orange); }
+  .s2-empty { padding: 22px; text-align: center; color: var(--muted); font-style: italic; font-size: 0.88rem; }
+  .s2-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .s2-group { background: #fff; border: 1px solid var(--border); border-left: 4px solid #CBD5E1;
+    border-radius: 12px; padding: 16px 18px; }
+  .s2-group h3 { margin: 0 0 8px; font-size: 0.95rem; color: var(--navy); }
+  .s2-group ul { margin: 0; padding: 0; list-style: none; font-size: 0.85rem; color: #334155; }
+  .s2-group li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0;
+    border-bottom: 1px dashed var(--border); }
+  .s2-group li:last-child { border-bottom: 0; }
+  .s2-group li em { font-style: normal; font-weight: 700; color: var(--navy); white-space: nowrap; }
+  .s2-group.s2-done { border-left-color: #22C55E; }
+  .s2-group.s2-done li em { color: #16A34A; }
+  .s2-edit select, .s2-edit input[type=text] { font-family: inherit; font-size: 0.8rem; padding: 4px 6px;
+    border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: #fff; }
+  .s2-edit input.s2-wide { width: 220px; }
+  .s2-edit input[data-f=evolucao] { width: 64px; }
+  .s2-del { border: 0; background: none; color: #EF4444; cursor: pointer; font-size: 0.85rem; }
+  .s2-edit-foot { padding: 10px 12px; }
+  @media (max-width: 1080px) { .s2-list { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 720px) { .s2-list { grid-template-columns: 1fr; } }
+"""
+
+SEM2_SCRIPT = """
+(function(){
+  var BASE = window.SEM2_DATA || [];
+  var KEY = 'sesi-2sem-v1';
+  var START = Date.UTC(2026, 6, 1), END = Date.UTC(2027, 0, 1);
+  var MONTHS = [['JUL',31],['AGO',31],['SET',30],['OUT',31],['NOV',30],['DEZ',31]];
+  var MARKERS = [[null, 'hoje', 'hoje'], [Date.UTC(2026, 11, 1), 'último faturamento', 'fat']];
+  var PALETTE = __PALETTE__;
+  var STATUSES = __STATUSES__;
+  var EXEC = ['Planejamento', 'Refinamento', 'Desenvolvimento', 'Homologação', 'Treinamento', 'Em andamento'];
+  var PLAN = ['Planejamento', 'Refinamento'];
+  var PARADA = ['Bloqueada', 'Pausada'];
+  var DONE = 'Concluída';
+  // sel: no Gantt? · ed: campos editados · add: entregáveis criados na página
+  var state = { sel: {}, ed: {}, add: [] };
+  try {
+    var s = JSON.parse(localStorage.getItem(KEY));
+    if (s && s.sel && s.ed) { state = s; state.add = s.add || []; }
+  } catch (e) {}
+  function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  function esc(t){ return String(t == null ? '' : t).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function parse(iso){ if (!iso) return null; var p = iso.split('-');
+    return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
+  function pct(t){ return (t - START) / (END - START) * 100; }
+  function br(iso){ if (!iso) return '—'; var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
+  function fmtPf(v){ return v == null ? '—' : v.toLocaleString('pt-BR', {maximumFractionDigits: 1}); }
+  function all(){ return BASE.concat(state.add); }
+  function val(it){
+    var e = state.ed[it.code] || {}, o = {};
+    ['produto', 'epico', 'ini', 'fim', 'pf', 'evolucao', 'status'].forEach(function(k){
+      o[k] = k in e ? e[k] : it[k];
+    });
+    return o;
+  }
+  function isSel(it){ return it.code in state.sel ? state.sel[it.code] : it.def; }
+  function where(it){ return val(it).status === DONE ? 'done' : (isSel(it) ? 'gantt' : 'rest'); }
+  function evo(v){ return Math.round((v.evolucao || 0) * 100) + '%'; }
+  function avatar(n){
+    var parts = n.split(/\\s+/), ini = (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+    var sum = 0; for (var i = 0; i < n.length; i++) sum += n.charCodeAt(i);
+    return '<span class="rm-av" style="background:' + PALETTE[sum % PALETTE.length] + '" title="' +
+      esc(n) + '">' + esc(ini) + '</span>';
+  }
+
+  function renderKpis(){
+    // Despriorizadas ficam fora dos KPIs, a não ser que tenham ido ao Gantt ou sido concluídas
+    var items = all().filter(function(it){ return !it.desp || where(it) !== 'rest'; }).map(val);
+    var n = function(list){
+      return items.filter(function(v){ return list.indexOf(v.status) >= 0; }).length; };
+    var plan = n(PLAN), exec = n(EXEC);
+    var tiles = [
+      ['Total de iniciativas', items.length, 'Nesta visão', '#3B82F6'],
+      ['Não iniciadas', n(['Não iniciada']), 'Aguardando priorização', '#94A3B8'],
+      ['Em execução', exec, plan + ' planej./refin. · ' + (exec - plan) + ' dev+', '#3B82F6'],
+      ['Paradas', n(PARADA), 'Bloqueadas e pausadas', '#F59E0B'],
+      ['Concluídas', n([DONE]), 'Entregues no ano', '#22C55E']
+    ];
+    document.getElementById('s2-kpis').innerHTML = tiles.map(function(t){
+      return '<div class="kpi-card" style="--accent:' + t[3] + '"><div class="kpi-value">' + t[1] +
+        '</div><div class="kpi-label">' + t[0] + '</div><div class="kpi-sub">' + esc(t[2]) + '</div></div>';
+    }).join('');
+  }
+
+  function renderGantt(){
+    var head = '', lines = '', acc = 0, cum = 0;
+    MONTHS.forEach(function(m, i){
+      head += '<div class="rm-month" style="flex:' + m[1] + '">' + m[0] + '</div>';
+      if (i < MONTHS.length - 1) { acc += m[1]; lines += '<div class="rm-month-line" style="left:' + (acc / 184 * 100).toFixed(4) + '%"></div>'; }
+    });
+    var now = new Date(), today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    var mHead = '', mLines = '';
+    MARKERS.forEach(function(m){
+      var t = m[0] == null ? today : m[0];
+      if (t < START || t >= END) return;
+      var p = pct(t).toFixed(2);
+      mHead += '<div class="rm-now rm-now-' + m[2] + '" style="left:' + p + '%"><span>' + m[1] + '</span></div>';
+      mLines += '<div class="rm-now-line rm-now-line-' + m[2] + '" style="left:' + p + '%"></div>';
+    });
+    var sel = all().filter(function(it){ return where(it) === 'gantt'; })
+      .map(function(it){ return { it: it, v: val(it) }; });
+    sel.sort(function(a, b){ return (a.v.ini || '9999').localeCompare(b.v.ini || '9999'); });
+    var rows = '';
+    sel.forEach(function(x){
+      var it = x.it, v = x.v, bar = '';
+      var a = parse(v.ini), b = parse(v.fim);
+      if (a != null && b != null && b >= a) {
+        var l = Math.max(pct(a), 0), r = Math.min(pct(b + 86400000), 100);
+        if (r > l) {
+          var cls = 's2-bar' + (pct(a) < 0 ? ' cut-l' : '') + (pct(b + 86400000) > 100 ? ' cut-r' : '');
+          bar = '<div class="' + cls + '" style="left:' + l.toFixed(2) + '%;width:' + (r - l).toFixed(2) + '%"></div>';
+        }
+      }
+      if (v.pf != null) cum += v.pf;
+      var tip = v.produto + ' · ' + v.epico + ' | ' + v.status + ' | início ' + br(v.ini) + ' → fim ' + br(v.fim) + ' | PF ' + fmtPf(v.pf);
+      rows += '<div class="rm-row" title="' + esc(tip) + '">' +
+        '<div class="rm-side"><span class="rm-prod">' + esc(v.produto) + '</span>' +
+        '<span class="rm-avatars">' + (it.equipe || []).map(avatar).join('') + '</span>' +
+        '<span class="rm-epic"><b>' + esc(v.epico) + '</b><i>' + evo(v) + '</i></span></div>' +
+        '<div class="rm-timeline">' + bar + '</div>' +
+        '<div class="s2-pf"><b>' + fmtPf(v.pf) + ' PF</b><small>acum. ' + fmtPf(cum) + '</small></div></div>';
+    });
+    if (!sel.length) rows = '<div class="s2-empty">Nenhuma iniciativa selecionada. Use “Editar” para escolher o que exibir.</div>';
+    var ov = function(inner, cls){ return '<div class="' + cls + '"><div class="rm-now-spacer"></div><div class="rm-now-track">' +
+      inner + '</div><div class="s2-endspacer"></div></div>'; };
+    document.getElementById('s2-gantt').innerHTML =
+      '<div class="rm-scroll"><div class="rm-inner">' +
+      '<div class="rm-head"><div class="rm-side"></div><div class="rm-timeline rm-months">' + head + mHead +
+      '</div><div class="s2-pf">PF · acumulado</div></div>' +
+      '<div class="rm-rows">' + ov(lines, 'rm-month-overlay') + ov(mLines, 'rm-now-overlay') + rows + '</div>' +
+      (sel.length ? '<div class="s2-total"><div class="rm-side">Total de PF (' + sel.length + ' iniciativas)</div>' +
+        '<div class="rm-timeline"></div><div class="s2-pf"><b>' + fmtPf(cum) + ' PF</b></div></div>' : '') +
+      '</div></div>';
+  }
+
+  // Lista agrupada por produto (Demais entregáveis / Concluídas)
+  function renderGroups(id, place, right, empty){
+    var groups = {}, order = [];
+    all().filter(function(it){ return where(it) === place; }).forEach(function(it){
+      var v = val(it);
+      if (!groups[v.produto]) { groups[v.produto] = []; order.push(v.produto); }
+      groups[v.produto].push(v);
+    });
+    order.sort();
+    document.getElementById(id).innerHTML = order.length ? order.map(function(p){
+      return '<div class="s2-group s2-' + place + '"><h3>' + esc(p) + '</h3><ul>' +
+        groups[p].map(function(v){ return '<li><span>' + esc(v.epico) + '</span><em>' + right(v) + '</em></li>'; }).join('') +
+        '</ul></div>';
+    }).join('') : '<p class="empty-state">' + empty + '</p>';
+  }
+
+  function renderEdit(){
+    var prods = {};
+    all().forEach(function(it){ prods[val(it).produto] = 1; });
+    var rows = all().map(function(it){
+      var v = val(it), w = where(it), added = /^NEW-/.test(it.code);
+      var opts = STATUSES.map(function(s){
+        return '<option' + (s === v.status ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('');
+      if (STATUSES.indexOf(v.status) < 0) opts = '<option selected>' + esc(v.status) + '</option>' + opts;
+      var prodCell = added ? '<input type="text" data-f="produto" list="s2-prods" value="' + esc(v.produto) + '">' : esc(v.produto);
+      var epicCell = added ? '<input type="text" data-f="epico" class="s2-wide" value="' + esc(v.epico) + '">' +
+        ' <button class="s2-del" data-f="del" title="Remover">✕</button>' : esc(v.epico);
+      return '<tr class="' + (w === 'gantt' ? '' : 'off') + '" data-code="' + esc(it.code) + '">' +
+        '<td><input type="checkbox" data-f="sel"' + (isSel(it) ? ' checked' : '') + (w === 'done' ? ' disabled' : '') + '></td>' +
+        '<td>' + prodCell + '</td><td>' + epicCell + '</td>' +
+        '<td><select data-f="status">' + opts + '</select></td>' +
+        '<td><input type="number" data-f="evolucao" min="0" max="100" step="5" value="' + Math.round((v.evolucao || 0) * 100) + '"></td>' +
+        '<td><input type="date" data-f="ini" value="' + esc(v.ini) + '"></td>' +
+        '<td><input type="date" data-f="fim" value="' + esc(v.fim) + '"></td>' +
+        '<td><input type="number" data-f="pf" min="0" step="0.1" value="' + (v.pf == null ? '' : v.pf) + '"></td></tr>';
+    }).join('');
+    document.getElementById('s2-edit').innerHTML =
+      '<datalist id="s2-prods">' + Object.keys(prods).sort().map(function(p){ return '<option value="' + esc(p) + '">'; }).join('') + '</datalist>' +
+      '<table><thead><tr><th>No Gantt</th><th>Produto</th><th>Épico</th><th>Status</th><th>Evol. %</th>' +
+      '<th>Início</th><th>Fim</th><th>PF</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<div class="s2-edit-foot"><button class="s2-btn" id="s2-add">+ Adicionar entregável</button></div>';
+  }
+
+  function refresh(){
+    renderKpis(); renderGantt();
+    renderGroups('s2-list', 'rest', evo, 'Todos os entregáveis estão no Gantt.');
+    renderGroups('s2-done', 'done', function(v){ return v.pf == null ? '' : fmtPf(v.pf) + ' PF'; },
+      'Nenhuma iniciativa concluída.');
+  }
+
+  var edit = document.getElementById('s2-edit');
+  edit.addEventListener('change', function(e){
+    var tr = e.target.closest('tr'), f = e.target.getAttribute('data-f');
+    if (!tr || !f) return;
+    var code = tr.getAttribute('data-code');
+    if (f === 'sel') {
+      state.sel[code] = e.target.checked;
+    } else {
+      var ed = state.ed[code] || (state.ed[code] = {}), raw = e.target.value;
+      if (f === 'pf') ed.pf = raw === '' ? null : parseFloat(raw);
+      else if (f === 'evolucao') ed.evolucao = raw === '' ? 0 : Math.min(Math.max(parseFloat(raw), 0), 100) / 100;
+      else ed[f] = raw;
+    }
+    save(); refresh();
+    if (f === 'status' || f === 'produto') renderEdit();  // atualiza checkbox desabilitado / sugestões
+    else tr.classList.toggle('off', where(all().filter(function(it){ return it.code === code; })[0]) !== 'gantt');
+  });
+  edit.addEventListener('click', function(e){
+    if (e.target.id === 's2-add') {
+      var code = 'NEW-' + Date.now();
+      state.add.push({ code: code, produto: '', epico: 'Novo entregável', ini: '', fim: '', pf: null,
+        evolucao: 0, equipe: [], status: 'Não iniciada', def: false });
+      save(); renderEdit(); refresh();
+      var inp = edit.querySelector('tr[data-code="' + code + '"] [data-f=produto]');
+      if (inp) { inp.scrollIntoView({block: 'center'}); inp.focus(); }
+    } else if (e.target.getAttribute('data-f') === 'del') {
+      var c = e.target.closest('tr').getAttribute('data-code');
+      state.add = state.add.filter(function(it){ return it.code !== c; });
+      delete state.ed[c]; delete state.sel[c];
+      save(); renderEdit(); refresh();
+    }
+  });
+  var btnEdit = document.getElementById('s2-toggle'), btnReset = document.getElementById('s2-reset');
+  btnEdit.addEventListener('click', function(){
+    var open = edit.classList.toggle('hidden') === false;
+    btnEdit.textContent = open ? '✓ Concluir' : '✏️ Editar';
+    btnEdit.classList.toggle('on', open);
+    btnReset.classList.toggle('hidden', !open);
+  });
+  btnReset.addEventListener('click', function(){
+    if (!confirm('Descartar todas as edições desta aba (inclusive entregáveis adicionados) e voltar aos dados originais?')) return;
+    state = { sel: {}, ed: {}, add: [] }; save(); renderEdit(); refresh();
+  });
+
+  renderEdit(); refresh();
 })();
 """
 
@@ -168,6 +446,14 @@ def label_value(ws, label, value_col, label_col=1, end=80):
     return ws.cell(row=r, column=value_col).value
 
 
+def optional_value(ws, label, value_col):
+    """label_value que devolve 0 quando o rótulo não existe mais na aba."""
+    try:
+        return num(label_value(ws, label, value_col))
+    except ValueError:
+        return 0.0
+
+
 def fmt_pf(value):
     return f"{value:,.1f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
@@ -206,10 +492,14 @@ def extract_financeiro(ws):
     faturado_total = dict(linhas)["TOTAL"]["faturado"]
 
     # Janelas de faturamento (tabela abaixo de "JANELAS DE FATURAMENTO").
-    jan_row = find_row_starting(ws, 1, "JANELAS DE FATURAMENTO")
+    # Blocos opcionais: podem não existir mais na aba (não são exibidos hoje).
+    try:
+        jan_row = find_row_starting(ws, 1, "JANELAS DE FATURAMENTO")
+    except ValueError:
+        jan_row = None
     janelas = []
-    r = jan_row + 1
-    while True:
+    r = (jan_row or 0) + 1
+    while jan_row:
         janela = to_date(ws.cell(row=r, column=1).value)
         if janela is None:
             break
@@ -223,10 +513,13 @@ def extract_financeiro(ws):
         r += 1
 
     # Proposta a negociar para o próximo ciclo (bloco final da aba).
-    prop_row = find_row_with(ws, 1, "PROPOSTA A NEGOCIAR PARA O PRÓXIMO CICLO")
+    try:
+        prop_row = find_row_with(ws, 1, "PROPOSTA A NEGOCIAR PARA O PRÓXIMO CICLO")
+    except ValueError:
+        prop_row = None
     proposta, prop_nota = [], ""
-    r = prop_row + 1
-    while True:
+    r = (prop_row or 0) + 1
+    while prop_row:
         c1 = ws.cell(row=r, column=1).value
         if c1 is None or str(c1).strip() == "":
             break
@@ -245,14 +538,15 @@ def extract_financeiro(ws):
         "linhas": linhas,
         "faturado_total": faturado_total,
         "faturado_pct": num(label_value(ws, "Faturado sobre o contratado", 2)),
-        "saldo": num(label_value(ws, "Saldo a faturar (PF)", 2)),
+        # "Saldo a faturar (PF)" foi renomeado para "Saldo disponível" — casa pelos dois
+        "saldo": num(ws.cell(row=find_row_starting(ws, 1, "Saldo"), column=2).value),
         "meses": int(num(label_value(ws, "Meses restantes", 2))),
         "media_mes": num(label_value(ws, "Média PF por mês necessário", 2)),
-        "pf_a_faturar": num(label_value(ws, "PF a faturar", 2)),
+        "pf_a_faturar": optional_value(ws, "PF a faturar", 2),
         "item_antigo": int(num(label_value(ws, "Item mais antigo parado (dias)", 2))),
         "janelas": janelas,
-        "total_faturavel": num(label_value(ws, "TOTAL faturável dentro do ciclo", 5)),
-        "teto": num(label_value(ws, "Teto do contrato (já faturado + faturável)", 5)),
+        "total_faturavel": optional_value(ws, "TOTAL faturável dentro do ciclo", 5),
+        "teto": optional_value(ws, "Teto do contrato (já faturado + faturável)", 5),
         "proposta": proposta,
         "prop_nota": prop_nota,
     }
@@ -330,6 +624,51 @@ def extract_roadmap(ws):
             "equipe": equipe,
         })
     itens.sort(key=lambda x: x["inicio"])
+    return itens
+
+
+SEM2_SITUACOES = {"Ativo", "Despriorizado", "Concluído"}  # candidatos da aba 2º SEM
+SEM2_INICIO = date(2026, 7, 1)
+SEM2_FIM = date(2026, 12, 31)
+
+
+def extract_sem2(ws):
+    """Iniciativas externas candidatas à aba 2º SEM. Pré-seleciona no Gantt as
+    ativas que caem no 2º semestre; a Letícia ajusta a seleção na própria página."""
+    header = find_row_with(ws, 1, "Situação")
+    rows = read_table(ws, header, key_col=3)
+    itens = []
+    for r in rows:
+        situacao = str(r.get("Situação") or "").strip()
+        categoria = str(r.get("Categoria") or "").strip()
+        if situacao not in SEM2_SITUACOES or categoria == "Interno":
+            continue
+        inicio = to_date(r.get("Início"))
+        fim = to_date(r.get("Fim (previsto)")) or inicio
+        equipe = []
+        for col in ["PO 1", "PO 2", "Designer", "DEV 1", "DEV 2", "DEV 3"]:
+            n = str(r.get(col) or "").strip()
+            if n and n not in ("N/A", "A definir"):
+                equipe.append(n)
+        pf = r.get("PF (estimado)")
+        no_semestre = bool(inicio and fim and fim >= SEM2_INICIO and inicio <= SEM2_FIM)
+        status = str(r.get("Status") or "").strip() or "Não iniciada"
+        if situacao == "Concluído":
+            status = "Concluída"
+        itens.append({
+            "code": str(r.get("Código") or "").strip(),
+            "produto": str(r.get("Produto") or "").strip(),
+            "epico": str(r.get("Épico") or "").strip(),
+            "ini": inicio.isoformat() if inicio else "",
+            "fim": fim.isoformat() if fim else "",
+            "pf": None if pf in (None, "") else num(pf),
+            "evolucao": num(r.get("Evolução")),
+            "equipe": equipe[:6],
+            "status": status,
+            "desp": situacao == "Despriorizado",
+            "def": situacao == "Ativo" and no_semestre,
+        })
+    itens.sort(key=lambda x: (x["ini"] or "9999", x["produto"]))
     return itens
 
 
@@ -827,6 +1166,7 @@ PAGE_TEMPLATE = """<!doctype html>
     .cards-grid {{ grid-template-columns: 1fr; }}
     header.top h1 {{ font-size: 1.6rem; }}
   }}
+{sem2_css}
 </style>
 </head>
 <body>
@@ -866,8 +1206,34 @@ PAGE_TEMPLATE = """<!doctype html>
     <div class="subtabs">
       <button class="subtab active" data-sub="externos-geral">Visão geral</button>
       <button class="subtab" data-sub="externos-contrato">Pontos de Função</button>
+      <button class="subtab" data-sub="externos-sem2">2º SEM</button>
     </div>
     <div class="subview" id="sub-externos-geral">{ext_view}</div>
+    <div class="subview hidden" id="sub-externos-sem2">
+      <section>
+        <h2>Visão geral — Portfólio</h2>
+        <div class="kpi-row" id="s2-kpis"></div>
+      </section>
+      <section>
+        <div class="s2-bar-top">
+          <h2>Roadmap — 2º semestre 2026</h2>
+          <div class="s2-actions">
+            <button class="s2-btn hidden" id="s2-reset">↺ Restaurar original</button>
+            <button class="s2-btn" id="s2-toggle">✏️ Editar</button>
+          </div>
+        </div>
+        <div class="s2-edit hidden" id="s2-edit"></div>
+        <div id="s2-gantt"></div>
+      </section>
+      <section>
+        <h2>Demais entregáveis</h2>
+        <div class="s2-list" id="s2-list"></div>
+      </section>
+      <section>
+        <h2>Concluídas</h2>
+        <div class="s2-list" id="s2-done"></div>
+      </section>
+    </div>
     <div class="subview hidden" id="sub-externos-contrato">
       <section>
         <h2>Pontos de Função</h2>
@@ -893,6 +1259,8 @@ PAGE_TEMPLATE = """<!doctype html>
   <div class="foot-line"><img class="foot-logo" src="{logo}" alt=""><span>Grupo Fênix Educação · Última atualização em {updated_at}</span></div>
 </footer>
 <script>{nav_script}</script>
+<script>window.SEM2_DATA = {sem2_data};</script>
+<script>{sem2_script}</script>
 </body>
 </html>
 """
@@ -995,6 +1363,7 @@ def build():
     kpis = kpis_from_portfolio(produtos)
     roadmap = extract_roadmap(wb["Iniciativas"])
     bloqueios = extract_bloqueios(wb["Bloqueios"])
+    sem2 = extract_sem2(wb["Iniciativas"])
     wb.close()
 
     logo = logo_data_uri()
@@ -1027,6 +1396,11 @@ def build():
         ext_view=ext_view,
         int_view=int_view,
         financeiro_html=render_financeiro(fin_data)[0],  # só base (sem janelas/proposta)
+        sem2_css=SEM2_CSS,
+        sem2_data=json.dumps(sem2, ensure_ascii=False).replace("</", "<\\/"),
+        sem2_script=(SEM2_SCRIPT
+                     .replace("__PALETTE__", json.dumps(AVATAR_PALETTE))
+                     .replace("__STATUSES__", json.dumps([col for _k, col, *_ in STAGES], ensure_ascii=False))),
     )
 
     password = read_password()
